@@ -1,13 +1,10 @@
 import os
-import requests
-import time
+import google.generativeai as genai
 from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
 from dotenv import load_dotenv
+import requests
+import time
 from functools import wraps
-from pymongo import MongoClient
-from flask_bcrypt import Bcrypt
-import google.generativeai as genai
-import certifi
 
 # Load .env variables
 load_dotenv()
@@ -15,15 +12,6 @@ load_dotenv()
 # Initialize Flask
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
-
-# Initialize Bcrypt for password hashing
-bcrypt = Bcrypt(app)
-
-# MongoDB Atlas setup
-mongo_uri = os.getenv("MONGO_URI")
-client = MongoClient(mongo_uri, tls=True, tlsCAFile=certifi.where())
-db = client['blog_generator_db']  # Database name
-users_collection = db['users']    # Collection for users
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -35,6 +23,10 @@ HIX_API_ENDPOINT = "https://api.hix.ai/v1/humanize"  # Replace with actual HIX A
 blog_generation_model = genai.GenerativeModel("gemini-1.5-flash")
 grammar_improvement_model = genai.GenerativeModel("gemini-1.5-flash")
 
+# Hardcoded credentials
+VALID_EMAIL = "digirocket@aicontent.com"
+VALID_PASSWORD = "digirocket@123"
+
 # Login required decorator
 def login_required(f):
     @wraps(f)
@@ -44,73 +36,35 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Updated Login/Signup Template with Tabs
-LOGIN_SIGNUP_TEMPLATE = '''
+# Login template
+LOGIN_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Login / Sign Up - Blog Generator</title>
+    <title>Login - Blog Generator</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-    <script>
-        function toggleTab(tab) {
-            document.getElementById('login-tab').classList.remove('bg-blue-500', 'text-white');
-            document.getElementById('signup-tab').classList.remove('bg-blue-500', 'text-white');
-            document.getElementById('login-form').style.display = 'none';
-            document.getElementById('signup-form').style.display = 'none';
-            
-            if (tab === 'login') {
-                document.getElementById('login-tab').classList.add('bg-blue-500', 'text-white');
-                document.getElementById('login-form').style.display = 'block';
-            } else {
-                document.getElementById('signup-tab').classList.add('bg-blue-500', 'text-white');
-                document.getElementById('signup-form').style.display = 'block';
-            }
-        }
-    </script>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
     <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full">
-        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Blog Generator</h1>
-        <div class="flex mb-6">
-            <button id="login-tab" onclick="toggleTab('login')" class="flex-1 py-2 px-4 bg-blue-500 text-white rounded-l-lg focus:outline-none">Sign In</button>
-            <button id="signup-tab" onclick="toggleTab('signup')" class="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-r-lg focus:outline-none">Sign Up</button>
-        </div>
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Login</h1>
         {% if error %}
             <p class="text-red-500 text-center mb-4">{{ error }}</p>
         {% endif %}
-        
-        <!-- Login Form -->
-        <form id="login-form" method="POST" action="/login" class="space-y-6">
+        <form method="POST" action="/login" class="space-y-6">
             <div>
                 <label class="block mb-2 text-gray-700">Email</label>
-                <input type="email" name="email" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+                <input type="email" name="email" required 
+                       class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
             </div>
             <div>
                 <label class="block mb-2 text-gray-700">Password</label>
-                <input type="password" name="password" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+                <input type="password" name="password" required 
+                       class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
             </div>
-            <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 rounded-lg hover:from-blue-600 hover:to-purple-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
-                Sign In
-            </button>
-        </form>
-        
-        <!-- Signup Form -->
-        <form id="signup-form" method="POST" action="/signup" class="space-y-6" style="display: none;">
-            <div>
-                <label class="block mb-2 text-gray-700">Email</label>
-                <input type="email" name="email" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
-            </div>
-            <div>
-                <label class="block mb-2 text-gray-700">Password</label>
-                <input type="password" name="password" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
-            </div>
-            <div>
-                <label class="block mb-2 text-gray-700">Confirm Password</label>
-                <input type="password" name="confirm_password" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
-            </div>
-            <button type="submit" class="w-full bg-gradient-to-r from-green-500 to-teal-600 text-white p-3 rounded-lg hover:from-green-600 hover:to-teal-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
-                Sign Up
+            <button type="submit" 
+                    class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 rounded-lg hover:from-blue-600 hover:to-purple-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
+                Login
             </button>
         </form>
     </div>
@@ -166,7 +120,11 @@ def humanize_chunk(chunk, api_key=os.getenv("HIX_API_KEY")):
         max_attempts = 10
         for _ in range(max_attempts):
             time.sleep(2)
-            obtain_response = requests.get(OBTAIN_URL, params={"task_id": task_id}, headers=headers)
+            obtain_response = requests.get(
+                OBTAIN_URL, 
+                params={"task_id": task_id}, 
+                headers=headers
+            )
             obtain_response.raise_for_status()
             obtain_data = obtain_response.json()
 
@@ -190,7 +148,11 @@ def humanize_text(text, max_words=500):
         return text
 
     chunks = split_text_into_chunks(text, max_words)
-    humanized_chunks = [humanize_chunk(chunk, api_key) for chunk in chunks]
+    humanized_chunks = []
+    for chunk in chunks:
+        humanized_chunk = humanize_chunk(chunk, api_key)
+        humanized_chunks.append(humanized_chunk)
+
     return ' '.join(humanized_chunks)
 
 def improve_grammar_and_readability(content, primary_keywords, secondary_keywords):
@@ -210,14 +172,17 @@ def improve_grammar_and_readability(content, primary_keywords, secondary_keyword
     {content}
 
     Provide the improved version of the text."""
+
     try:
         response = grammar_improvement_model.generate_content(improvement_prompt)
-        return response.text
+        improved_content = response.text
+        return improved_content
     except Exception as e:
         print(f"Grammar improvement error: {e}")
         return content
 
-def generate_blog_outline(product_url, product_title, product_description, primary_keywords, secondary_keywords, intent):
+def generate_blog_outline(product_url, product_title, product_description,
+                          primary_keywords, secondary_keywords, intent):
     prompt = f"""Create a comprehensive and detailed blog outline for a product blog with the following details:
 
 Product URL: {product_url}
@@ -276,7 +241,8 @@ Additional Guidance:
     response = blog_generation_model.generate_content(prompt)
     return response.text
 
-def generate_blog_content(outline, product_url, product_title, product_description, primary_keywords, secondary_keywords, intent):
+def generate_blog_content(outline, product_url, product_title, product_description,
+                          primary_keywords, secondary_keywords, intent):
     sections = outline.split('\n\n')
     blog_content = []
     all_keywords = primary_keywords.split(", ") + secondary_keywords.split(", ")
@@ -286,16 +252,19 @@ def generate_blog_content(outline, product_url, product_title, product_descripti
 
     for i, section in enumerate(sections):
         previous_text = ' '.join(blog_content) if i > 0 else 'None'
+
         primary_keywords_instruction = (
             "\n- Use primary keywords sparingly and naturally, aiming for no more than 3 total uses across the entire blog: "
             + ', '.join(primary_keywords.split(", ")) +
             ". Ensure the usage is contextually relevant and not forced."
         )
+
         secondary_keywords_instruction = (
             "\n- Use each of the following secondary keywords approximately **1 time** throughout the entire blog: "
             + ', '.join(secondary_keywords.split(", ")) +
             ". Make the usage natural and contextually relevant."
         )
+
         section_prompt = f"""Generate a detailed section for a blog post while ensuring no repetition.
 
 Section Outline:
@@ -318,10 +287,13 @@ Previous Sections Summary:
 {previous_text}
 
 Generate the content for this section."""
+
         response = blog_generation_model.generate_content(section_prompt)
         section_content = response.text
+
         for keyword in all_keywords:
             keyword_usage[keyword] += section_content.lower().count(keyword.lower())
+
         blog_content.append(section_content)
 
     for keyword, count in keyword_usage.items():
@@ -400,16 +372,19 @@ def generate_general_blog_content(outline, keywords, primary_keywords, prompt):
 
     for i, section in enumerate(sections):
         previous_text = ' '.join(blog_content) if i > 0 else 'None'
+
         primary_keywords_instruction = (
             "\n- Use primary keywords sparingly and naturally, aiming for no more than 3 total uses across the entire blog: "
             + ', '.join(primary_keywords.split(", ")) +
             ". Ensure the usage is contextually relevant and not forced."
         )
+
         secondary_keywords_instruction = (
             "\n- Use each of the following secondary keywords approximately **1 time** throughout the entire blog: "
             + ', '.join(keywords.split(", ")) +
             ". Make the usage natural and contextually relevant."
         )
+
         section_prompt = f"""Generate a detailed section for a blog post while ensuring no repetition.
 
 Section Outline:
@@ -426,10 +401,13 @@ Previous Sections Summary:
 {previous_text}
 
 Generate the content for this section."""
+
         response = blog_generation_model.generate_content(section_prompt)
         section_content = response.text
+
         for keyword in all_keywords:
             keyword_usage[keyword] += section_content.lower().count(keyword.lower())
+
         blog_content.append(section_content)
 
     for keyword, count in keyword_usage.items():
@@ -458,9 +436,11 @@ def generate_blog_summary(blog_content, primary_keywords, secondary_keywords, in
     {blog_content}
 
     Provide the summary."""
+
     try:
         response = blog_generation_model.generate_content(summary_prompt)
-        return response.text
+        summary = response.text
+        return summary
     except Exception as e:
         print(f"Summary generation error: {e}")
         return "Unable to generate summary due to an error."
@@ -478,9 +458,11 @@ def generate_faq_content(blog_content, faq_count=5):
     {blog_content}
 
     Provide the FAQs."""
+
     try:
         response = blog_generation_model.generate_content(faq_prompt)
-        return response.text
+        faq_content = response.text
+        return faq_content
     except Exception as e:
         print(f"FAQ generation error: {e}")
         return "Unable to generate FAQs due to an error."
@@ -494,40 +476,7 @@ INDEX_TEMPLATE = '''
     <title>Blog Generator Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <script type="module" src="https://cdn.jsdelivr.net/npm/ldrs/dist/auto/grid.js"></script>
-    <script>
-        function showForm(type) {
-            document.getElementById('product-form-container').style.display = 'none';
-            document.getElementById('general-form-container').style.display = 'none';
-            document.getElementById('faq-form-container').style.display = 'none';
-            if (type === 'product') {
-                document.getElementById('product-form-container').style.display = 'block';
-            } else if (type === 'general') {
-                document.getElementById('general-form-container').style.display = 'block';
-            } else if (type === 'faq') {
-                document.getElementById('faq-form-container').style.display = 'block';
-            }
-        }
-
-        function showLoader(loaderId) {
-            document.getElementById(loaderId).style.display = 'flex';
-        }
-
-        function hideLoader(loaderId) {
-            document.getElementById(loaderId).style.display = 'none';
-        }
-
-        document.addEventListener('DOMContentLoaded', () => {
-            document.querySelectorAll('form').forEach(form => {
-                form.addEventListener('submit', (e) => {
-                    if (form.action.includes('/faq')) {
-                        showLoader('grid-loader-faq');
-                    } else {
-                        showLoader('grid-loader');
-                    }
-                });
-            });
-        });
-    </script>
+    <script type="module" src="https://cdn.jsdelivr.net/npm/ldrs/dist/auto/quantum.js"></script>
     <style>
         .loader-overlay {
             position: fixed;
@@ -542,8 +491,55 @@ INDEX_TEMPLATE = '''
             z-index: 9999;
         }
     </style>
+    <script>
+        function showForm(type) {
+            document.getElementById('product-form-container').style.display = 'none';
+            document.getElementById('general-form-container').style.display = 'none';
+            document.getElementById('faq-form-container').style.display = 'none';
+            if (type === 'product') {
+                document.getElementById('product-form-container').style.display = 'block';
+            } else if (type === 'general') {
+                document.getElementById('general-form-container').style.display = 'block';
+            } else if (type === 'faq') {
+                document.getElementById('faq-form-container').style.display = 'block';
+            }
+        }
+
+        function showGridLoader() {
+            document.getElementById('grid-loader').style.display = 'flex';
+        }
+
+        function hideGridLoader() {
+            document.getElementById('grid-loader').style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const productForm = document.querySelector('#product-form-container form');
+            const generalForm = document.querySelector('#general-form-container form');
+            const faqForm = document.querySelector('#faq-form-container form');
+
+            if (productForm) {
+                productForm.addEventListener('submit', () => {
+                    showGridLoader();
+                });
+            }
+            if (generalForm) {
+                generalForm.addEventListener('submit', () => {
+                    showGridLoader();
+                });
+            }
+            if (faqForm) {
+                faqForm.addEventListener('submit', () => {
+                    showGridLoader();
+                });
+            }
+        });
+    </script>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
+    <div class="loader-overlay" id="grid-loader">
+        <l-grid size="100" speed="1.5" color="white"></l-grid>
+    </div>
     <div class="container mx-auto max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden relative">
         <div class="bg-gradient-to-r from-blue-500 to-purple-600 p-8 relative">
             <h1 class="text-4xl font-extrabold mb-4 text-center text-white drop-shadow-lg">Blog Generator Dashboard</h1>
@@ -659,13 +655,6 @@ INDEX_TEMPLATE = '''
             </div>
         </div>
     </div>
-
-    <div id="grid-loader" class="loader-overlay">
-        <l-grid size="150" speed="1.7" color="white"></l-grid>
-    </div>
-    <div id="grid-loader-faq" class="loader-overlay">
-        <l-grid size="150" speed="1.7" color="white"></l-grid>
-    </div>
 </body>
 </html>
 '''
@@ -678,20 +667,35 @@ RESULT_TEMPLATE = '''
     <meta charset="UTF-8">
     <title>Blog Generation Result</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/ldrs/dist/auto/grid.js"></script>
     <script type="module" src="https://cdn.jsdelivr.net/npm/ldrs/dist/auto/quantum.js"></script>
+    <style>
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+    </style>
     <script>
-        function showLoader(loaderId) {
-            document.getElementById(loaderId).style.display = 'flex';
+        function showQuantumLoader() {
+            document.getElementById('quantum-loader').style.display = 'flex';
         }
 
-        function hideLoader(loaderId) {
-            document.getElementById(loaderId).style.display = 'none';
+        function hideQuantumLoader() {
+            document.getElementById('quantum-loader').style.display = 'none';
         }
 
         function humanizeBlog() {
             const userConfirmed = confirm("I have read and made necessary changes to the AI blog. I know each humanize will cost credits. I agree to move forward. Proceed?");
             if (userConfirmed) {
-                showLoader('quantum-loader-humanize');
+                showQuantumLoader();
                 fetch('/humanize', {
                     method: 'POST',
                     headers: {
@@ -703,14 +707,14 @@ RESULT_TEMPLATE = '''
                 })
                 .then(response => response.json())
                 .then(data => {
+                    hideQuantumLoader();
                     document.getElementById('humanized-content').textContent = data.humanized_content;
                     document.getElementById('humanize-section').style.display = 'block';
-                    hideLoader('quantum-loader-humanize');
                 })
                 .catch(error => {
+                    hideQuantumLoader();
                     console.error('Error:', error);
                     alert('Failed to humanize the blog');
-                    hideLoader('quantum-loader-humanize');
                 });
             }
         }
@@ -737,7 +741,7 @@ RESULT_TEMPLATE = '''
         }
 
         function regenerateContent() {
-            showLoader('quantum-loader-regenerate');
+            showQuantumLoader();
             fetch('/regenerate', {
                 method: 'POST',
                 headers: {
@@ -746,7 +750,7 @@ RESULT_TEMPLATE = '''
             })
             .then(response => response.json())
             .then(data => {
-                hideLoader('quantum-loader-regenerate');
+                hideQuantumLoader();
                 if (data.error) {
                     alert('Error: ' + data.error);
                 } else {
@@ -763,28 +767,17 @@ RESULT_TEMPLATE = '''
                 }
             })
             .catch(error => {
+                hideQuantumLoader();
                 console.error('Error:', error);
                 alert('Failed to regenerate content');
-                hideLoader('quantum-loader-regenerate');
             });
         }
     </script>
-    <style>
-        .loader-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.5);
-            display: none;
-            justify-content: center;
-            align-items: center;
-            z-index: 9999;
-        }
-    </style>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
+    <div class="loader-overlay" id="quantum-loader">
+        <l-quantum size="100" speed="1.75" color="white"></l-quantum>
+    </div>
     <div class="container mx-auto max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div class="bg-gradient-to-r from-blue-500 to-purple-600 p-6">
             <h1 class="text-4xl font-extrabold text-center text-white drop-shadow-lg">Generated Blog Content</h1>
@@ -834,6 +827,7 @@ RESULT_TEMPLATE = '''
             </div>
 
             <div class="flex justify-center space-x-4">
+                {% if not faq_content %}
                 <button onclick="humanizeBlog()" class="flex items-center bg-gradient-to-r from-green-500 to-teal-600 text-white px-6 py-3 rounded-lg hover:from-green-600 hover:to-teal-700 transition transform hover:scale-105 shadow-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
@@ -841,6 +835,7 @@ RESULT_TEMPLATE = '''
                     </svg>
                     Humanize Blog
                 </button>
+                {% endif %}
                 <button onclick="saveEdits()" class="flex items-center bg-gradient-to-r from-yellow-500 to-orange-600 text-white px-6 py-3 rounded-lg hover:from-yellow-600 hover:to-orange-700 transition transform hover:scale-105 shadow-lg">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
@@ -878,58 +873,32 @@ RESULT_TEMPLATE = '''
             </div>
         </div>
     </div>
-
-    <div id="quantum-loader-humanize" class="loader-overlay">
-        <l-quantum size="150" speed="1.7" color="white"></l-quantum>
-    </div>
-    <div id="quantum-loader-regenerate" class="loader-overlay">
-        <l-quantum size="150" speed="1.7" color="white"></l-quantum>
-    </div>
 </body>
 </html>
 '''
 
-# Routes remain largely unchanged except for minor adjustments
+# Login route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
-        user = users_collection.find_one({'email': email})
-        if user and bcrypt.check_password_hash(user['password'], password):
+        
+        if email == VALID_EMAIL and password == VALID_PASSWORD:
             session['logged_in'] = True
-            session['user_email'] = email
             return redirect(url_for('index'))
         else:
-            return render_template_string(LOGIN_SIGNUP_TEMPLATE, error="Invalid email or password")
-    return render_template_string(LOGIN_SIGNUP_TEMPLATE)
+            return render_template_string(LOGIN_TEMPLATE, error="Invalid email or password")
+    
+    return render_template_string(LOGIN_TEMPLATE)
 
-@app.route('/signup', methods=['POST'])
-def signup():
-    email = request.form.get('email')
-    password = request.form.get('password')
-    confirm_password = request.form.get('confirm_password')
-    if password != confirm_password:
-        return render_template_string(LOGIN_SIGNUP_TEMPLATE, error="Passwords do not match")
-    existing_user = users_collection.find_one({'email': email})
-    if existing_user:
-        return render_template_string(LOGIN_SIGNUP_TEMPLATE, error="Email already registered")
-    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
-    users_collection.insert_one({
-        'email': email,
-        'password': hashed_password,
-        'created_at': time.time()
-    })
-    session['logged_in'] = True
-    session['user_email'] = email
-    return redirect(url_for('index'))
-
+# Logout route
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
-    session.pop('user_email', None)
     return redirect(url_for('login'))
 
+# Modified index route
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
@@ -940,6 +909,7 @@ def index():
         primary_keywords = request.form.get('primary_keywords')
         secondary_keywords = request.form.get('secondary_keywords')
         intent = request.form.get('intent')
+
         session['form_data'] = {
             'product_url': product_url,
             'product_title': product_title,
@@ -949,13 +919,30 @@ def index():
             'intent': intent,
             'type': 'product'
         }
+
         try:
-            blog_outline = generate_blog_outline(product_url, product_title, product_description, primary_keywords, secondary_keywords, intent)
-            blog_content = generate_blog_content(blog_outline, product_url, product_title, product_description, primary_keywords, secondary_keywords, intent)
-            blog_summary = generate_blog_summary(blog_content, primary_keywords, secondary_keywords, intent)
-            return render_template_string(RESULT_TEMPLATE, outline=blog_outline, content=blog_content, summary=blog_summary)
+            blog_outline = generate_blog_outline(
+                product_url, product_title, product_description,
+                primary_keywords, secondary_keywords, intent
+            )
+
+            blog_content = generate_blog_content(
+                blog_outline, product_url, product_title, product_description,
+                primary_keywords, secondary_keywords, intent
+            )
+
+            blog_summary = generate_blog_summary(
+                blog_content, primary_keywords, secondary_keywords, intent
+            )
+
+            return render_template_string(RESULT_TEMPLATE,
+                                        outline=blog_outline,
+                                        content=blog_content,
+                                        summary=blog_summary)
+
         except Exception as e:
             return jsonify({"error": str(e)}), 500
+
     return render_template_string(INDEX_TEMPLATE)
 
 @app.route('/general', methods=['POST'])
@@ -963,17 +950,26 @@ def generate_general_blog():
     keywords = request.form.get('keywords')
     primary_keywords = request.form.get('primary_keywords')
     prompt = request.form.get('prompt')
+
     session['form_data'] = {
         'keywords': keywords,
         'primary_keywords': primary_keywords,
         'prompt': prompt,
         'type': 'general'
     }
+
     try:
         blog_outline = generate_general_blog_outline(keywords, primary_keywords, prompt)
         blog_content = generate_general_blog_content(blog_outline, keywords, primary_keywords, prompt)
-        blog_summary = generate_blog_summary(blog_content, primary_keywords, keywords, intent="informative")
-        return render_template_string(RESULT_TEMPLATE, outline=blog_outline, content=blog_content, summary=blog_summary)
+        blog_summary = generate_blog_summary(
+            blog_content, primary_keywords, keywords, intent="informative"
+        )
+
+        return render_template_string(RESULT_TEMPLATE,
+                                    outline=blog_outline,
+                                    content=blog_content,
+                                    summary=blog_summary)
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -981,29 +977,73 @@ def generate_general_blog():
 def regenerate_content():
     try:
         form_data = session.get('form_data', {})
+        
         if not form_data:
             return jsonify({"error": "No previous form data found"}), 400
+
         if form_data.get('type') == 'product':
             blog_outline = generate_blog_outline(
-                form_data['product_url'], form_data['product_title'], form_data['product_description'],
-                form_data['primary_keywords'], form_data['secondary_keywords'], form_data['intent']
+                form_data['product_url'],
+                form_data['product_title'],
+                form_data['product_description'],
+                form_data['primary_keywords'],
+                form_data['secondary_keywords'],
+                form_data['intent']
             )
             blog_content = generate_blog_content(
-                blog_outline, form_data['product_url'], form_data['product_title'], form_data['product_description'],
-                form_data['primary_keywords'], form_data['secondary_keywords'], form_data['intent']
+                blog_outline,
+                form_data['product_url'],
+                form_data['product_title'],
+                form_data['product_description'],
+                form_data['primary_keywords'],
+                form_data['secondary_keywords'],
+                form_data['intent']
             )
             blog_summary = generate_blog_summary(
-                blog_content, form_data['primary_keywords'], form_data['secondary_keywords'], form_data['intent']
+                blog_content,
+                form_data['primary_keywords'],
+                form_data['secondary_keywords'],
+                form_data['intent']
             )
-            return jsonify({'outline': blog_outline, 'content': blog_content, 'summary': blog_summary})
+            return jsonify({
+                'outline': blog_outline,
+                'content': blog_content,
+                'summary': blog_summary
+            })
         elif form_data.get('type') == 'general':
-            blog_outline = generate_general_blog_outline(form_data['keywords'], form_data['primary_keywords'], form_data['prompt'])
-            blog_content = generate_general_blog_content(blog_outline, form_data['keywords'], form_data['primary_keywords'], form_data['prompt'])
-            blog_summary = generate_blog_summary(blog_content, form_data['primary_keywords'], form_data['keywords'], intent="informative")
-            return jsonify({'outline': blog_outline, 'content': blog_content, 'summary': blog_summary})
+            blog_outline = generate_general_blog_outline(
+                form_data['keywords'],
+                form_data['primary_keywords'],
+                form_data['prompt']
+            )
+            blog_content = generate_general_blog_content(
+                blog_outline,
+                form_data['keywords'],
+                form_data['primary_keywords'],
+                form_data['prompt']
+            )
+            blog_summary = generate_blog_summary(
+                blog_content,
+                form_data['primary_keywords'],
+                form_data['keywords'],
+                intent="informative"
+            )
+            return jsonify({
+                'outline': blog_outline,
+                'content': blog_content,
+                'summary': blog_summary
+            })
         elif form_data.get('type') == 'faq':
-            faq_content = generate_faq_content(form_data['blog_content'], form_data['faq_count'])
-            return jsonify({'outline': None, 'content': form_data['blog_content'], 'summary': None, 'faq_content': faq_content})
+            faq_content = generate_faq_content(
+                form_data['blog_content'],
+                form_data['faq_count']
+            )
+            return jsonify({
+                'outline': None,
+                'content': form_data['blog_content'],
+                'summary': None,
+                'faq_content': faq_content
+            })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -1013,30 +1053,49 @@ def humanize_blog():
         data = request.get_json()
         content = data.get('content', '')
         humanized_content = humanize_text(content)
-        return jsonify({'humanized_content': humanized_content})
+
+        return jsonify({
+            'humanized_content': humanized_content
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e)
+        }), 500
 
 @app.route('/save', methods=['POST'])
 def save_edits():
     try:
         data = request.get_json()
         edited_content = data.get('content', '')
-        return jsonify({'message': 'Edits saved successfully'})
+
+        return jsonify({
+            'message': 'Edits saved successfully'
+        })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e)
+        }), 500
 
 @app.route('/faq', methods=['POST'])
 def generate_faq():
     blog_content = request.form.get('blog_content')
     faq_count = int(request.form.get('faq_count', 5))
-    session['form_data'] = {'blog_content': blog_content, 'faq_count': faq_count, 'type': 'faq'}
+
+    session['form_data'] = {
+        'blog_content': blog_content,
+        'faq_count': faq_count,
+        'type': 'faq'
+    }
+
     try:
         faq_content = generate_faq_content(blog_content, faq_count)
-        return render_template_string(RESULT_TEMPLATE, outline=None, content=blog_content, summary=None, faq_content=faq_content)
+        return render_template_string(RESULT_TEMPLATE,
+                                     outline=None,
+                                     content=blog_content,
+                                     summary=None,
+                                     faq_content=faq_content)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
-    port = int(os.getenv("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=True)
+    app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5000)))
