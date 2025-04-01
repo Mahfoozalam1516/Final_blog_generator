@@ -7,3 +7,4 @@ pymongo
 dnspython
 bcrypt
 flask_bcrypt
+certifi

@@ -7,6 +7,7 @@ from functools import wraps
 from pymongo import MongoClient
 from flask_bcrypt import Bcrypt
 import google.generativeai as genai
+import certifi
 
 # Load .env variables
 load_dotenv()
@@ -20,7 +21,7 @@ bcrypt = Bcrypt(app)
 
 # MongoDB Atlas setup
 mongo_uri = os.getenv("MONGO_URI")
-client = MongoClient(mongo_uri, tls=True, tlsAllowInvalidCertificates=True)
+client = MongoClient(mongo_uri, tls=True, tlsCAFile=certifi.where())
 db = client['blog_generator_db']  # Database name
 users_collection = db['users']    # Collection for users
 
