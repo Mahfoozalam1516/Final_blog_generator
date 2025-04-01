@@ -20,7 +20,7 @@ bcrypt = Bcrypt(app)
 
 # MongoDB Atlas setup
 mongo_uri = os.getenv("MONGO_URI")
-client = MongoClient(mongo_uri)
+client = MongoClient(mongo_uri, tls=True, tlsAllowInvalidCertificates=False)
 db = client['blog_generator_db']  # Database name
 users_collection = db['users']    # Collection for users
 
