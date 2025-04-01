@@ -3,3 +3,6 @@ google-generativeai
 python-dotenv
 requests
 gunicorn
+pymongo
+dnspython
+bcrypt

@@ -1,10 +1,12 @@
 import os
-import google.generativeai as genai
-from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
-from dotenv import load_dotenv
 import requests
 import time
+from flask import Flask, render_template_string, request, jsonify, session, redirect, url_for
+from dotenv import load_dotenv
 from functools import wraps
+from pymongo import MongoClient
+from flask_bcrypt import Bcrypt
+import google.generativeai as genai
 
 # Load .env variables
 load_dotenv()
@@ -12,6 +14,15 @@ load_dotenv()
 # Initialize Flask
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
+
+# Initialize Bcrypt for password hashing
+bcrypt = Bcrypt(app)
+
+# MongoDB Atlas setup
+mongo_uri = os.getenv("MONGO_URI")
+client = MongoClient(mongo_uri)
+db = client['blog_generator_db']  # Database name
+users_collection = db['users']    # Collection for users
 
 # Configure Gemini
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
@@ -23,10 +34,6 @@ HIX_API_ENDPOINT = "https://api.hix.ai/v1/humanize"  # Replace with actual HIX A
 blog_generation_model = genai.GenerativeModel("gemini-1.5-flash")
 grammar_improvement_model = genai.GenerativeModel("gemini-1.5-flash")
 
-# Hardcoded credentials
-VALID_EMAIL = "digirocket@aicontent.com"
-VALID_PASSWORD = "digirocket@123"
-
 # Login required decorator
 def login_required(f):
     @wraps(f)
@@ -36,35 +43,73 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# Login template
-LOGIN_TEMPLATE = '''
+# Updated Login/Signup Template with Tabs
+LOGIN_SIGNUP_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Login - Blog Generator</title>
+    <title>Login / Sign Up - Blog Generator</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script>
+        function toggleTab(tab) {
+            document.getElementById('login-tab').classList.remove('bg-blue-500', 'text-white');
+            document.getElementById('signup-tab').classList.remove('bg-blue-500', 'text-white');
+            document.getElementById('login-form').style.display = 'none';
+            document.getElementById('signup-form').style.display = 'none';
+            
+            if (tab === 'login') {
+                document.getElementById('login-tab').classList.add('bg-blue-500', 'text-white');
+                document.getElementById('login-form').style.display = 'block';
+            } else {
+                document.getElementById('signup-tab').classList.add('bg-blue-500', 'text-white');
+                document.getElementById('signup-form').style.display = 'block';
+            }
+        }
+    </script>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
     <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-md w-full">
-        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Login</h1>
+        <h1 class="text-3xl font-bold text-center mb-6 text-gray-800">Blog Generator</h1>
+        <div class="flex mb-6">
+            <button id="login-tab" onclick="toggleTab('login')" class="flex-1 py-2 px-4 bg-blue-500 text-white rounded-l-lg focus:outline-none">Sign In</button>
+            <button id="signup-tab" onclick="toggleTab('signup')" class="flex-1 py-2 px-4 bg-gray-200 text-gray-700 rounded-r-lg focus:outline-none">Sign Up</button>
+        </div>
         {% if error %}
             <p class="text-red-500 text-center mb-4">{{ error }}</p>
         {% endif %}
-        <form method="POST" action="/login" class="space-y-6">
+        
+        <!-- Login Form -->
+        <form id="login-form" method="POST" action="/login" class="space-y-6">
             <div>
                 <label class="block mb-2 text-gray-700">Email</label>
-                <input type="email" name="email" required 
-                       class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+                <input type="email" name="email" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
             </div>
             <div>
                 <label class="block mb-2 text-gray-700">Password</label>
-                <input type="password" name="password" required 
-                       class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+                <input type="password" name="password" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
             </div>
-            <button type="submit" 
-                    class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 rounded-lg hover:from-blue-600 hover:to-purple-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
-                Login
+            <button type="submit" class="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white p-3 rounded-lg hover:from-blue-600 hover:to-purple-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
+                Sign In
+            </button>
+        </form>
+        
+        <!-- Signup Form -->
+        <form id="signup-form" method="POST" action="/signup" class="space-y-6" style="display: none;">
+            <div>
+                <label class="block mb-2 text-gray-700">Email</label>
+                <input type="email" name="email" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+            </div>
+            <div>
+                <label class="block mb-2 text-gray-700">Password</label>
+                <input type="password" name="password" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+            </div>
+            <div>
+                <label class="block mb-2 text-gray-700">Confirm Password</label>
+                <input type="password" name="confirm_password" required class="w-full p-3 border-2 border-gray-200 rounded-lg focus:outline-none focus:border-blue-500 transition">
+            </div>
+            <button type="submit" class="w-full bg-gradient-to-r from-green-500 to-teal-600 text-white p-3 rounded-lg hover:from-green-600 hover:to-teal-700 transition duration-300 ease-in-out transform hover:scale-105 hover:shadow-lg">
+                Sign Up
             </button>
         </form>
     </div>
@@ -72,21 +117,7 @@ LOGIN_TEMPLATE = '''
 </html>
 '''
 
-import os
-import requests
-import time
-
 def split_text_into_chunks(text, max_words=500):
-    """
-    Split text into chunks of approximately max_words.
-    
-    Args:
-        text (str): Input text to be split
-        max_words (int): Maximum number of words per chunk
-    
-    Returns:
-        list: List of text chunks
-    """
     words = text.split()
     chunks = []
     current_chunk = []
@@ -101,72 +132,46 @@ def split_text_into_chunks(text, max_words=500):
             current_chunk = []
             current_word_count = 0
 
-    # Add any remaining words
     if current_chunk:
         chunks.append(' '.join(current_chunk))
 
     return chunks
 
 def humanize_chunk(chunk, api_key=os.getenv("HIX_API_KEY")):
-    """
-    Humanize a single text chunk.
-    
-    Args:
-        chunk (str): Text chunk to humanize
-        api_key (str): HIX API key
-    
-    Returns:
-        str: Humanized chunk or original chunk if humanization fails
-    """
-    # API endpoints
     SUBMIT_URL = "https://bypass.hix.ai/api/hixbypass/v1/submit"
     OBTAIN_URL = "https://bypass.hix.ai/api/hixbypass/v1/obtain"
 
-    # Headers for API requests
     headers = {
         "api-key": api_key,
         "Content-Type": "application/json"
     }
 
-    # Payload for submission
     submit_payload = {
         "input": chunk,
         "mode": "Balanced"
     }
 
     try:
-        # Submit humanization task
         submit_response = requests.post(SUBMIT_URL, json=submit_payload, headers=headers)
         submit_response.raise_for_status()
         submit_data = submit_response.json()
 
-        # Check for submission errors
         if submit_data.get('err_code') != 0:
             print(f"Submission Error: {submit_data.get('err_msg', 'Unknown error')}")
             return chunk
 
-        # Extract task ID
         task_id = submit_data['data']['task_id']
 
-        # Poll for task result
         max_attempts = 10
         for _ in range(max_attempts):
             time.sleep(2)
-
-            # Obtain task result
-            obtain_response = requests.get(
-                OBTAIN_URL, 
-                params={"task_id": task_id}, 
-                headers=headers
-            )
+            obtain_response = requests.get(OBTAIN_URL, params={"task_id": task_id}, headers=headers)
             obtain_response.raise_for_status()
             obtain_data = obtain_response.json()
 
-            # Check if task is complete
             if obtain_data.get('err_code') == 0 and obtain_data['data'].get('task_status'):
                 return obtain_data['data'].get('output', chunk)
 
-        # Timeout error
         print("Humanization task timed out")
         return chunk
 
@@ -175,50 +180,19 @@ def humanize_chunk(chunk, api_key=os.getenv("HIX_API_KEY")):
         return chunk
 
 def humanize_text(text, max_words=500):
-    """
-    Humanize text by processing it in chunks.
-    
-    Args:
-        text (str): Text to be humanized
-        max_words (int): Maximum words per chunk
-    
-    Returns:
-        str: Humanized text
-    """
-    # Validate input
     if not text or len(text.split()) < 50:
         return text
 
-    # Get API key from environment
     api_key = os.getenv("HIX_API_KEY")
     if not api_key:
         print("Error: HIX API Key not set in environment variables")
         return text
 
-    # Split text into chunks
     chunks = split_text_into_chunks(text, max_words)
-
-    # Humanize each chunk
-    humanized_chunks = []
-    for chunk in chunks:
-        humanized_chunk = humanize_chunk(chunk, api_key)
-        humanized_chunks.append(humanized_chunk)
-
-    # Reassemble humanized chunks
+    humanized_chunks = [humanize_chunk(chunk, api_key) for chunk in chunks]
     return ' '.join(humanized_chunks)
-    
+
 def improve_grammar_and_readability(content, primary_keywords, secondary_keywords):
-    """
-    Improve the grammar, clarity, and readability of the generated blog content.
-
-    Args:
-        content (str): The original generated blog content
-        primary_keywords (str): Comma-separated primary keywords
-        secondary_keywords (str): Comma-separated secondary keywords
-
-    Returns:
-        str: Improved, more polished blog content
-    """
     improvement_prompt = f"""Please review and improve the following text.
     Focus on:
     - Make sure the primary keywords are used only 4-5 times in whole blog: {primary_keywords}
@@ -235,17 +209,14 @@ def improve_grammar_and_readability(content, primary_keywords, secondary_keyword
     {content}
 
     Provide the improved version of the text."""
-
     try:
         response = grammar_improvement_model.generate_content(improvement_prompt)
-        improved_content = response.text
-        return improved_content
+        return response.text
     except Exception as e:
         print(f"Grammar improvement error: {e}")
-        return content  # Return original content if improvement fails
+        return content
 
-def generate_blog_outline(product_url, product_title, product_description,
-                          primary_keywords, secondary_keywords, intent):
+def generate_blog_outline(product_url, product_title, product_description, primary_keywords, secondary_keywords, intent):
     prompt = f"""Create a comprehensive and detailed blog outline for a product blog with the following details:
 
 Product URL: {product_url}
@@ -304,30 +275,26 @@ Additional Guidance:
     response = blog_generation_model.generate_content(prompt)
     return response.text
 
-def generate_blog_content(outline, product_url, product_title, product_description,
-                          primary_keywords, secondary_keywords, intent):
+def generate_blog_content(outline, product_url, product_title, product_description, primary_keywords, secondary_keywords, intent):
     sections = outline.split('\n\n')
     blog_content = []
     all_keywords = primary_keywords.split(", ") + secondary_keywords.split(", ")
     keyword_usage = {keyword: 0 for keyword in all_keywords}
-    primary_keyword_target = 3  # Reduced from 5 to 3 times
-    secondary_keyword_target = 1  # Target usage for secondary keywords
+    primary_keyword_target = 3
+    secondary_keyword_target = 1
 
     for i, section in enumerate(sections):
         previous_text = ' '.join(blog_content) if i > 0 else 'None'
-
         primary_keywords_instruction = (
             "\n- Use primary keywords sparingly and naturally, aiming for no more than 3 total uses across the entire blog: "
             + ', '.join(primary_keywords.split(", ")) +
             ". Ensure the usage is contextually relevant and not forced."
         )
-
         secondary_keywords_instruction = (
             "\n- Use each of the following secondary keywords approximately **1 time** throughout the entire blog: "
             + ', '.join(secondary_keywords.split(", ")) +
             ". Make the usage natural and contextually relevant."
         )
-
         section_prompt = f"""Generate a detailed section for a blog post while ensuring no repetition.
 
 Section Outline:
@@ -350,27 +317,20 @@ Previous Sections Summary:
 {previous_text}
 
 Generate the content for this section."""
-
         response = blog_generation_model.generate_content(section_prompt)
         section_content = response.text
-
-        # Update keyword usage count
         for keyword in all_keywords:
             keyword_usage[keyword] += section_content.lower().count(keyword.lower())
-
         blog_content.append(section_content)
 
-    # Ensure primary keywords are used no more than 3 times and secondary keywords are used once
     for keyword, count in keyword_usage.items():
         if keyword in primary_keywords.split(", ") and count > primary_keyword_target:
-            # Remove excess mentions by regenerating content or adjusting references
             blog_content = [section.replace(keyword, f"**{keyword}**", count - primary_keyword_target) for section in blog_content]
         elif keyword in secondary_keywords.split(", ") and count < secondary_keyword_target:
             additional_content = f"Moreover, {keyword} is an important aspect to consider."
             blog_content.append(additional_content)
             keyword_usage[keyword] += 1
 
-    # Combine content and improve grammar and readability
     final_content = '\n\n'.join(blog_content)
     improved_content = improve_grammar_and_readability(final_content, primary_keywords, secondary_keywords)
     return improved_content
@@ -434,24 +394,21 @@ def generate_general_blog_content(outline, keywords, primary_keywords, prompt):
     blog_content = []
     all_keywords = primary_keywords.split(", ") + keywords.split(", ")
     keyword_usage = {keyword: 0 for keyword in all_keywords}
-    primary_keyword_target = 3  # Target usage for primary keywords
-    secondary_keyword_target = 1  # Target usage for secondary keywords
+    primary_keyword_target = 3
+    secondary_keyword_target = 1
 
     for i, section in enumerate(sections):
         previous_text = ' '.join(blog_content) if i > 0 else 'None'
-
         primary_keywords_instruction = (
             "\n- Use primary keywords sparingly and naturally, aiming for no more than 3 total uses across the entire blog: "
             + ', '.join(primary_keywords.split(", ")) +
             ". Ensure the usage is contextually relevant and not forced."
         )
-
         secondary_keywords_instruction = (
             "\n- Use each of the following secondary keywords approximately **1 time** throughout the entire blog: "
             + ', '.join(keywords.split(", ")) +
             ". Make the usage natural and contextually relevant."
         )
-
         section_prompt = f"""Generate a detailed section for a blog post while ensuring no repetition.
 
 Section Outline:
@@ -468,46 +425,25 @@ Previous Sections Summary:
 {previous_text}
 
 Generate the content for this section."""
-
         response = blog_generation_model.generate_content(section_prompt)
         section_content = response.text
-
-        # Update keyword usage count
         for keyword in all_keywords:
             keyword_usage[keyword] += section_content.lower().count(keyword.lower())
-
         blog_content.append(section_content)
 
-    # Ensure primary keywords are used no more than 3 times and secondary keywords are used once
     for keyword, count in keyword_usage.items():
         if keyword in primary_keywords.split(", ") and count > primary_keyword_target:
-            # Remove excess mentions by regenerating content or adjusting references
             blog_content = [section.replace(keyword, f"**{keyword}**", count - primary_keyword_target) for section in blog_content]
         elif keyword in keywords.split(", ") and count < secondary_keyword_target:
             additional_content = f"Moreover, {keyword} is an important aspect to consider."
             blog_content.append(additional_content)
             keyword_usage[keyword] += 1
 
-    # Combine content and improve grammar and readability
     final_content = '\n\n'.join(blog_content)
-    
-    # Fix here: use 'keywords' instead of 'secondary_keywords' in this call
     improved_content = improve_grammar_and_readability(final_content, primary_keywords, keywords)
     return improved_content
 
 def generate_blog_summary(blog_content, primary_keywords, secondary_keywords, intent):
-    """
-    Generate a concise summary of the blog content.
-
-    Args:
-        blog_content (str): The full generated blog content
-        primary_keywords (str): Comma-separated primary keywords
-        secondary_keywords (str): Comma-separated secondary keywords
-        intent (str): The intent of the blog (e.g., informational, commercial)
-
-    Returns:
-        str: A summary of the blog content (150-200 words)
-    """
     summary_prompt = f"""Generate a concise and engaging summary (150-200 words) of the following blog content. 
     Focus on:
     - Highlighting the main points and key takeaways
@@ -521,26 +457,14 @@ def generate_blog_summary(blog_content, primary_keywords, secondary_keywords, in
     {blog_content}
 
     Provide the summary."""
-
     try:
         response = blog_generation_model.generate_content(summary_prompt)
-        summary = response.text
-        return summary
+        return response.text
     except Exception as e:
         print(f"Summary generation error: {e}")
         return "Unable to generate summary due to an error."
-    
+
 def generate_faq_content(blog_content, faq_count=5):
-    """
-    Generate FAQs based on the provided blog content.
-    
-    Args:
-        blog_content (str): The full blog content provided by the user
-        faq_count (int): Number of FAQs to generate (default is 5)
-    
-    Returns:
-        str: Generated FAQs in a formatted string
-    """
     faq_prompt = f"""Generate {faq_count} frequently asked questions (FAQs) based on the following blog content. 
     Ensure the FAQs:
     - Are directly relevant to the content provided
@@ -553,16 +477,14 @@ def generate_faq_content(blog_content, faq_count=5):
     {blog_content}
 
     Provide the FAQs."""
-
     try:
         response = blog_generation_model.generate_content(faq_prompt)
-        faq_content = response.text
-        return faq_content
+        return response.text
     except Exception as e:
         print(f"FAQ generation error: {e}")
         return "Unable to generate FAQs due to an error."
-    
-# HTML templates
+
+# Updated INDEX_TEMPLATE with loaders
 INDEX_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -570,6 +492,7 @@ INDEX_TEMPLATE = '''
     <meta charset="UTF-8">
     <title>Blog Generator Dashboard</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/ldrs/dist/auto/grid.js"></script>
     <script>
         function showForm(type) {
             document.getElementById('product-form-container').style.display = 'none';
@@ -583,14 +506,47 @@ INDEX_TEMPLATE = '''
                 document.getElementById('faq-form-container').style.display = 'block';
             }
         }
+
+        function showLoader(loaderId) {
+            document.getElementById(loaderId).style.display = 'flex';
+        }
+
+        function hideLoader(loaderId) {
+            document.getElementById(loaderId).style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            document.querySelectorAll('form').forEach(form => {
+                form.addEventListener('submit', (e) => {
+                    if (form.action.includes('/faq')) {
+                        showLoader('grid-loader-faq');
+                    } else {
+                        showLoader('grid-loader');
+                    }
+                });
+            });
+        });
     </script>
+    <style>
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+    </style>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
     <div class="container mx-auto max-w-5xl bg-white rounded-2xl shadow-2xl overflow-hidden relative">
         <div class="bg-gradient-to-r from-blue-500 to-purple-600 p-8 relative">
             <h1 class="text-4xl font-extrabold mb-4 text-center text-white drop-shadow-lg">Blog Generator Dashboard</h1>
             <p class="text-center text-white opacity-80">Create compelling blog content with ease</p>
-            <!-- Logout Button -->
             <a href="/logout" class="absolute top-4 right-4 flex items-center bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition duration-300 ease-in-out transform hover:scale-105">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
@@ -630,7 +586,6 @@ INDEX_TEMPLATE = '''
                 </div>
             </div>
 
-            <!-- Existing Product Form Container -->
             <div id="product-form-container" style="display:none;" class="bg-white p-8 rounded-xl shadow-lg border border-gray-100">
                 <h2 class="text-2xl font-bold mb-6 text-center text-blue-600">Generate Product Blog</h2>
                 <form method="POST" action="/" class="space-y-4">
@@ -664,7 +619,6 @@ INDEX_TEMPLATE = '''
                 </form>
             </div>
 
-            <!-- Existing General Form Container -->
             <div id="general-form-container" style="display:none;" class="bg-white p-8 rounded-xl shadow-lg border border-gray-100">
                 <h2 class="text-2xl font-bold mb-6 text-center text-purple-600">Generate General Blog</h2>
                 <form method="POST" action="/general" class="space-y-4">
@@ -686,7 +640,6 @@ INDEX_TEMPLATE = '''
                 </form>
             </div>
 
-            <!-- Existing FAQ Form Container -->
             <div id="faq-form-container" style="display:none;" class="bg-white p-8 rounded-xl shadow-lg border border-gray-100">
                 <h2 class="text-2xl font-bold mb-6 text-center text-teal-600">Generate FAQ Content</h2>
                 <form method="POST" action="/faq" class="space-y-4">
@@ -705,11 +658,18 @@ INDEX_TEMPLATE = '''
             </div>
         </div>
     </div>
+
+    <div id="grid-loader" class="loader-overlay">
+        <l-grid size="150" speed="1.7" color="white"></l-grid>
+    </div>
+    <div id="grid-loader-faq" class="loader-overlay">
+        <l-grid size="150" speed="1.7" color="white"></l-grid>
+    </div>
 </body>
 </html>
 '''
 
-# Updated HTML template to include humanization button and editable content
+# Updated RESULT_TEMPLATE with loaders
 RESULT_TEMPLATE = '''
 <!DOCTYPE html>
 <html lang="en">
@@ -717,10 +677,20 @@ RESULT_TEMPLATE = '''
     <meta charset="UTF-8">
     <title>Blog Generation Result</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script type="module" src="https://cdn.jsdelivr.net/npm/ldrs/dist/auto/quantum.js"></script>
     <script>
+        function showLoader(loaderId) {
+            document.getElementById(loaderId).style.display = 'flex';
+        }
+
+        function hideLoader(loaderId) {
+            document.getElementById(loaderId).style.display = 'none';
+        }
+
         function humanizeBlog() {
             const userConfirmed = confirm("I have read and made necessary changes to the AI blog. I know each humanize will cost credits. I agree to move forward. Proceed?");
             if (userConfirmed) {
+                showLoader('quantum-loader-humanize');
                 fetch('/humanize', {
                     method: 'POST',
                     headers: {
@@ -734,10 +704,12 @@ RESULT_TEMPLATE = '''
                 .then(data => {
                     document.getElementById('humanized-content').textContent = data.humanized_content;
                     document.getElementById('humanize-section').style.display = 'block';
+                    hideLoader('quantum-loader-humanize');
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Failed to humanize the blog');
+                    hideLoader('quantum-loader-humanize');
                 });
             }
         }
@@ -764,6 +736,7 @@ RESULT_TEMPLATE = '''
         }
 
         function regenerateContent() {
+            showLoader('quantum-loader-regenerate');
             fetch('/regenerate', {
                 method: 'POST',
                 headers: {
@@ -772,6 +745,7 @@ RESULT_TEMPLATE = '''
             })
             .then(response => response.json())
             .then(data => {
+                hideLoader('quantum-loader-regenerate');
                 if (data.error) {
                     alert('Error: ' + data.error);
                 } else {
@@ -790,9 +764,24 @@ RESULT_TEMPLATE = '''
             .catch(error => {
                 console.error('Error:', error);
                 alert('Failed to regenerate content');
+                hideLoader('quantum-loader-regenerate');
             });
         }
     </script>
+    <style>
+        .loader-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+    </style>
 </head>
 <body class="bg-gradient-to-br from-gray-100 to-gray-200 min-h-screen flex items-center justify-center p-4">
     <div class="container mx-auto max-w-6xl bg-white rounded-2xl shadow-2xl overflow-hidden">
@@ -888,44 +877,68 @@ RESULT_TEMPLATE = '''
             </div>
         </div>
     </div>
+
+    <div id="quantum-loader-humanize" class="loader-overlay">
+        <l-quantum size="150" speed="1.7" color="white"></l-quantum>
+    </div>
+    <div id="quantum-loader-regenerate" class="loader-overlay">
+        <l-quantum size="150" speed="1.7" color="white"></l-quantum>
+    </div>
 </body>
 </html>
 '''
 
-# Login route
+# Routes remain largely unchanged except for minor adjustments
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form.get('email')
         password = request.form.get('password')
-        
-        if email == VALID_EMAIL and password == VALID_PASSWORD:
+        user = users_collection.find_one({'email': email})
+        if user and bcrypt.check_password_hash(user['password'], password):
             session['logged_in'] = True
+            session['user_email'] = email
             return redirect(url_for('index'))
         else:
-            return render_template_string(LOGIN_TEMPLATE, error="Invalid email or password")
-    
-    return render_template_string(LOGIN_TEMPLATE)
+            return render_template_string(LOGIN_SIGNUP_TEMPLATE, error="Invalid email or password")
+    return render_template_string(LOGIN_SIGNUP_TEMPLATE)
 
-# Logout route
+@app.route('/signup', methods=['POST'])
+def signup():
+    email = request.form.get('email')
+    password = request.form.get('password')
+    confirm_password = request.form.get('confirm_password')
+    if password != confirm_password:
+        return render_template_string(LOGIN_SIGNUP_TEMPLATE, error="Passwords do not match")
+    existing_user = users_collection.find_one({'email': email})
+    if existing_user:
+        return render_template_string(LOGIN_SIGNUP_TEMPLATE, error="Email already registered")
+    hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
+    users_collection.insert_one({
+        'email': email,
+        'password': hashed_password,
+        'created_at': time.time()
+    })
+    session['logged_in'] = True
+    session['user_email'] = email
+    return redirect(url_for('index'))
+
 @app.route('/logout')
 def logout():
     session.pop('logged_in', None)
+    session.pop('user_email', None)
     return redirect(url_for('login'))
 
-# Modified index route with login requirement
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def index():
     if request.method == 'POST':
-        # Your existing POST handling code remains the same
         product_url = request.form.get('product_url')
         product_title = request.form.get('product_title')
         product_description = request.form.get('product_description')
         primary_keywords = request.form.get('primary_keywords')
         secondary_keywords = request.form.get('secondary_keywords')
         intent = request.form.get('intent')
-
         session['form_data'] = {
             'product_url': product_url,
             'product_title': product_title,
@@ -935,200 +948,93 @@ def index():
             'intent': intent,
             'type': 'product'
         }
-
         try:
-            blog_outline = generate_blog_outline(
-                product_url, product_title, product_description,
-                primary_keywords, secondary_keywords, intent
-            )
-
-            blog_content = generate_blog_content(
-                blog_outline, product_url, product_title, product_description,
-                primary_keywords, secondary_keywords, intent
-            )
-
-            blog_summary = generate_blog_summary(
-                blog_content, primary_keywords, secondary_keywords, intent
-            )
-
-            return render_template_string(RESULT_TEMPLATE,
-                                        outline=blog_outline,
-                                        content=blog_content,
-                                        summary=blog_summary)
-
+            blog_outline = generate_blog_outline(product_url, product_title, product_description, primary_keywords, secondary_keywords, intent)
+            blog_content = generate_blog_content(blog_outline, product_url, product_title, product_description, primary_keywords, secondary_keywords, intent)
+            blog_summary = generate_blog_summary(blog_content, primary_keywords, secondary_keywords, intent)
+            return render_template_string(RESULT_TEMPLATE, outline=blog_outline, content=blog_content, summary=blog_summary)
         except Exception as e:
             return jsonify({"error": str(e)}), 500
-
     return render_template_string(INDEX_TEMPLATE)
 
-# Modified general blog route to store form data
 @app.route('/general', methods=['POST'])
 def generate_general_blog():
     keywords = request.form.get('keywords')
     primary_keywords = request.form.get('primary_keywords')
     prompt = request.form.get('prompt')
-
-    # Store form data in session
     session['form_data'] = {
         'keywords': keywords,
         'primary_keywords': primary_keywords,
         'prompt': prompt,
         'type': 'general'
     }
-
     try:
         blog_outline = generate_general_blog_outline(keywords, primary_keywords, prompt)
         blog_content = generate_general_blog_content(blog_outline, keywords, primary_keywords, prompt)
-
-        # Generate the blog summary
-        blog_summary = generate_blog_summary(
-            blog_content, primary_keywords, keywords, intent="informative"  # Default intent for general blogs
-        )
-
-        return render_template_string(RESULT_TEMPLATE,
-                                    outline=blog_outline,
-                                    content=blog_content,
-                                    summary=blog_summary)
-
+        blog_summary = generate_blog_summary(blog_content, primary_keywords, keywords, intent="informative")
+        return render_template_string(RESULT_TEMPLATE, outline=blog_outline, content=blog_content, summary=blog_summary)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# New route for regenerating content
 @app.route('/regenerate', methods=['POST'])
 def regenerate_content():
     try:
         form_data = session.get('form_data', {})
-        
         if not form_data:
             return jsonify({"error": "No previous form data found"}), 400
-
         if form_data.get('type') == 'product':
             blog_outline = generate_blog_outline(
-                form_data['product_url'],
-                form_data['product_title'],
-                form_data['product_description'],
-                form_data['primary_keywords'],
-                form_data['secondary_keywords'],
-                form_data['intent']
+                form_data['product_url'], form_data['product_title'], form_data['product_description'],
+                form_data['primary_keywords'], form_data['secondary_keywords'], form_data['intent']
             )
             blog_content = generate_blog_content(
-                blog_outline,
-                form_data['product_url'],
-                form_data['product_title'],
-                form_data['product_description'],
-                form_data['primary_keywords'],
-                form_data['secondary_keywords'],
-                form_data['intent']
+                blog_outline, form_data['product_url'], form_data['product_title'], form_data['product_description'],
+                form_data['primary_keywords'], form_data['secondary_keywords'], form_data['intent']
             )
             blog_summary = generate_blog_summary(
-                blog_content,
-                form_data['primary_keywords'],
-                form_data['secondary_keywords'],
-                form_data['intent']
+                blog_content, form_data['primary_keywords'], form_data['secondary_keywords'], form_data['intent']
             )
-            return jsonify({
-                'outline': blog_outline,
-                'content': blog_content,
-                'summary': blog_summary
-            })
+            return jsonify({'outline': blog_outline, 'content': blog_content, 'summary': blog_summary})
         elif form_data.get('type') == 'general':
-            blog_outline = generate_general_blog_outline(
-                form_data['keywords'],
-                form_data['primary_keywords'],
-                form_data['prompt']
-            )
-            blog_content = generate_general_blog_content(
-                blog_outline,
-                form_data['keywords'],
-                form_data['primary_keywords'],
-                form_data['prompt']
-            )
-            blog_summary = generate_blog_summary(
-                blog_content,
-                form_data['primary_keywords'],
-                form_data['keywords'],
-                intent="informative"
-            )
-            return jsonify({
-                'outline': blog_outline,
-                'content': blog_content,
-                'summary': blog_summary
-            })
+            blog_outline = generate_general_blog_outline(form_data['keywords'], form_data['primary_keywords'], form_data['prompt'])
+            blog_content = generate_general_blog_content(blog_outline, form_data['keywords'], form_data['primary_keywords'], form_data['prompt'])
+            blog_summary = generate_blog_summary(blog_content, form_data['primary_keywords'], form_data['keywords'], intent="informative")
+            return jsonify({'outline': blog_outline, 'content': blog_content, 'summary': blog_summary})
         elif form_data.get('type') == 'faq':
-            faq_content = generate_faq_content(
-                form_data['blog_content'],
-                form_data['faq_count']
-            )
-            return jsonify({
-                'outline': None,
-                'content': form_data['blog_content'],
-                'summary': None,
-                'faq_content': faq_content
-            })
+            faq_content = generate_faq_content(form_data['blog_content'], form_data['faq_count'])
+            return jsonify({'outline': None, 'content': form_data['blog_content'], 'summary': None, 'faq_content': faq_content})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# Add a new route for humanization
 @app.route('/humanize', methods=['POST'])
 def humanize_blog():
     try:
-        # Get the content from the request
         data = request.get_json()
         content = data.get('content', '')
-
-        # Humanize the content
         humanized_content = humanize_text(content)
-
-        return jsonify({
-            'humanized_content': humanized_content
-        })
+        return jsonify({'humanized_content': humanized_content})
     except Exception as e:
-        return jsonify({
-            'error': str(e)
-        }), 500
+        return jsonify({'error': str(e)}), 500
 
-# Add a new route to save edits
 @app.route('/save', methods=['POST'])
 def save_edits():
     try:
-        # Get the edited content from the request
         data = request.get_json()
         edited_content = data.get('content', '')
-
-        # Here you can add logic to save the edited content to a database or file
-        # For this example, we'll just return a success message
-
-        return jsonify({
-            'message': 'Edits saved successfully'
-        })
+        return jsonify({'message': 'Edits saved successfully'})
     except Exception as e:
-        return jsonify({
-            'error': str(e)
-        }), 500
-    
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/faq', methods=['POST'])
 def generate_faq():
     blog_content = request.form.get('blog_content')
     faq_count = int(request.form.get('faq_count', 5))
-
-    # Store form data in session
-    session['form_data'] = {
-        'blog_content': blog_content,
-        'faq_count': faq_count,
-        'type': 'faq'
-    }
-
+    session['form_data'] = {'blog_content': blog_content, 'faq_count': faq_count, 'type': 'faq'}
     try:
         faq_content = generate_faq_content(blog_content, faq_count)
-        return render_template_string(RESULT_TEMPLATE,
-                                     outline=None,  # No outline for FAQs
-                                     content=blog_content,
-                                     summary=None,  # No summary for FAQs
-                                     faq_content=faq_content)
+        return render_template_string(RESULT_TEMPLATE, outline=None, content=blog_content, summary=None, faq_content=faq_content)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=int(os.getenv("PORT", 5000)))
-
-
